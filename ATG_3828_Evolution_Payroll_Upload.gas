@@ -1,0 +1,140 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Payoll data will be written to a fixed width csv file, so the data can be exported to Evolution.
+
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sDate.Declare(String)
+V.Local.sTime.Declare(String)
+V.Local.sQuery.Declare(String)
+V.Local.sTemp.Declare(String)
+V.Local.sLines.Declare(String)
+V.Local.sFileName.Declare(String)
+V.Local.iHdl.Declare(Long)
+
+''Use Hook 15290, in Shop Floor>Transactions>Transfer Labor to Payroll
+'F.Intrinsic.String.Left(Variable.Passed.888888,8,Variable.Local.sDate)
+'F.Intrinsic.String.Mid(Variable.Passed.888888,9,6,Variable.Local.sTime)
+'
+'DatainPyrl_Labor_Xfer.
+'Select data where:
+'Run_Cymd=Variable.Local.sDate
+
+F.Intrinsic.Control.If(V.Caller.Hook,=,15290)
+	F.Intrinsic.String.Left(Variable.Passed.888888,8,Variable.Local.sDate)
+	F.Intrinsic.String.Mid(Variable.Passed.888888,9,6,Variable.Local.sTime)
+	'Run_Time = Variable.Local.sTime
+
+	'V.Local.sDate.Set("20100205")
+	'V.Local.sTime.Set("145159")
+
+	'F.Intrinsic.String.Concat("SELECT * FROM PYRL_LABOR_XFER WHERE RUN_CYMD = '",V.Local.sDate,"' AND RUN_TIME = '",V.Local.sTime,"' order by Employee",V.Local.sQuery)
+	F.Intrinsic.String.Concat("SELECT * FROM PYRL_LABOR_XFER WHERE RUN_CYMD = '",V.Local.sDate,"' order by Employee",V.Local.sQuery)
+
+	F.ODBC.Connection!conX.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+	F.ODBC.Connection!conX.OpenLocalRecordsetRO("rst",V.Local.sQuery)
+
+	F.Intrinsic.Control.If(V.ODBC.conX!rst.EOF,<>,True)
+		'open the export file
+		F.Intrinsic.String.Concat(V.Caller.FilesDir,"\EvolutionPyrlExport",V.Local.sDate,V.Local.sTime,".csv",V.Local.sFileName)
+		F.Intrinsic.File.GetHandle(V.Local.iHdl)
+		F.Intrinsic.File.OpenForAppend(V.Local.sFileName,V.Local.iHdl)
+
+		F.Intrinsic.Control.DoUntil(V.ODBC.conX!rst.EOF,=,True)
+		'File layout (several fields not used, only listing those that are required, but Import_Format.doc lists all).Blank fill unused spaces.
+		'
+		'Employee-Pyrl_Labor_Xfer.Employee(1-6)
+		F.Intrinsic.String.LPad(V.ODBC.conX!rst.FieldValTrim!EMPLOYEE," ",6,V.Local.sLines)
+		F.Intrinsic.String.RPad(V.Local.sLines," ",50,V.Local.sLines)
+		'D/E-Always"E"(51)
+		F.Intrinsic.String.Concat(V.Local.sLines,"E",V.Local.sLines)
+		'Earn Code- see chart of codes below(52-53)
+		'Chart of Codes:
+		'GSS-->Evolution
+		F.Intrinsic.Control.SelectCase(V.ODBC.conX!rst.FieldValTrim!EC)
+		'01-->00(Salary)
+		F.Intrinsic.Control.Case("01")
+			F.Intrinsic.String.Concat(V.Local.sLines,"00",V.Local.sLines)
+		'02/RT-->01(Regular)
+		F.Intrinsic.Control.Case("02")
+			F.Intrinsic.String.Concat(V.Local.sLines,"01",V.Local.sLines)
+		'03-->02(Vacation)
+		F.Intrinsic.Control.Case("03")
+			F.Intrinsic.String.Concat(V.Local.sLines,"02",V.Local.sLines)
+		'04-->03(Holiday)
+		F.Intrinsic.Control.Case("04")
+			F.Intrinsic.String.Concat(V.Local.sLines,"03",V.Local.sLines)
+		'05-->04(Sick)
+		F.Intrinsic.Control.Case("05")
+			F.Intrinsic.String.Concat(V.Local.sLines,"04",V.Local.sLines)
+		'06 (not used in GSS
+		F.Intrinsic.Control.Case("06")
+			F.Intrinsic.String.Concat(V.Local.sLines,"  ",V.Local.sLines)
+		'07-->07(Retro Pay)
+		F.Intrinsic.Control.Case("07")
+			F.Intrinsic.String.Concat(V.Local.sLines,"07",V.Local.sLines)
+		'08-->08(Jury Duty)
+		F.Intrinsic.Control.Case("08")
+			F.Intrinsic.String.Concat(V.Local.sLines,"08",V.Local.sLines)
+		'09-->09(Funeral)
+		F.Intrinsic.Control.Case("09")
+			F.Intrinsic.String.Concat(V.Local.sLines,"09",V.Local.sLines)
+		'10/OT-->10(Overtime)
+		F.Intrinsic.Control.Case("10")
+			F.Intrinsic.String.Concat(V.Local.sLines,"10",V.Local.sLines)
+		F.Intrinsic.Control.CaseElse
+			'02/RT-->01(Regular)
+			F.Intrinsic.Control.If(V.ODBC.conX!rst.FieldValTrim!TYPE,=,"RT")
+				F.Intrinsic.String.Concat(V.Local.sLines,"01",V.Local.sLines)
+			'10/OT-->10(Overtime)
+			F.Intrinsic.Control.ElseIf(V.ODBC.conX!rst.FieldValTrim!TYPE,=,"OT")
+				F.Intrinsic.String.Concat(V.Local.sLines,"10",V.Local.sLines)
+			F.Intrinsic.Control.Else
+				F.Intrinsic.String.Concat(V.Local.sLines,"  ",V.Local.sLines)
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndSelect
+
+		'Rate-always "0.00" (54-62)
+		F.Intrinsic.String.Concat(V.Local.sLines,"     0.00",V.Local.sLines)
+
+		'Hours-Pyrl_Labor_Xfer.Hours(63-70; format 0.00)
+		F.Intrinsic.String.LPad(V.ODBC.conX!rst.FieldValTrim!HOURS," ",8,V.Local.sTemp)
+		F.Intrinsic.String.Concat(V.Local.sLines,V.Local.sTemp,V.Local.sLines)
+		
+		F.Intrinsic.File.WriteLine(V.Local.iHdl,V.Local.sLines)
+
+		F.ODBC.conX!rst.MoveNext
+		F.Intrinsic.Control.Loop
+	F.Intrinsic.Control.EndIf
+
+	F.Intrinsic.File.CloseFile(V.Local.iHdl)
+	F.ODBC.conX!rst.Close
+	F.ODBC.Connection!conX.Close
+
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: ATG_3828_Evolution_Payroll_Upload.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.Comments.Start
+${$0$}$ATG_3828_Evolution_Payroll_Upload$}$RKing$}$4/22/2016
+${$1$}$$}$$}$0$}$15290$}$PR0999-CREATE-FILE-HOOK$}$4/22/2016 10:07:55 AM$}$(Program: PR0999; Screen: PR0999)
+
+Program.Sub.Comments.End
+
